@@ -1,0 +1,9 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/ReviewAI.Api/ReviewAI.Api.csproj" />
+    <Project Path="src/ReviewAI.Core/ReviewAI.Core.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/ReviewAI.Tests/ReviewAI.Tests.csproj" />
+  </Folder>
+</Solution>
