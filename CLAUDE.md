@@ -25,6 +25,8 @@ using Claude AI and returns a structured code review with scores and comments.
 - Always use primary constructors where possible
 
 ## Architecture Rules
+- Follow SOLID principles strictly
+- Use design patterns where appropriate (Strategy, Factory, Decorator, etc.)
 - No business logic in controllers
 - Controllers only dispatch MediatR commands/queries
 - All business logic lives in handlers inside ReviewAI.Core
