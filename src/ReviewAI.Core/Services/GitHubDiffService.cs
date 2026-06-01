@@ -2,14 +2,9 @@ using Octokit;
 
 namespace ReviewAI.Core.Services;
 
-public sealed class GitHubDiffService : IGitHubDiffService
+public sealed class GitHubDiffService(GitHubClient gitHubClient) : IGitHubDiffService
 {
-    private readonly GitHubClient _gitHubClient;
-
-    public GitHubDiffService(GitHubClient gitHubClient)
-    {
-        _gitHubClient = gitHubClient;
-    }
+    private readonly GitHubClient _gitHubClient = gitHubClient;
 
     public async Task<string> GetPullRequestDiff(string pullRequestUrl, CancellationToken cancellationToken)
     {

@@ -4,14 +4,9 @@ using ReviewAI.Core.Features.ReviewPullRequest;
 
 namespace ReviewAI.Core.Services;
 
-public sealed class ClaudeReviewService : IClaudeReviewService
+public sealed class ClaudeReviewService(AnthropicClient anthropicClient) : IClaudeReviewService
 {
-    private readonly AnthropicClient _anthropicClient;
-
-    public ClaudeReviewService(AnthropicClient anthropicClient)
-    {
-        _anthropicClient = anthropicClient;
-    }
+    private readonly AnthropicClient _anthropicClient = anthropicClient;
 
     public async Task<ReviewPullRequestResult> ReviewDiffAsync(string diff, CancellationToken cancellationToken)
     {

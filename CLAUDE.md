@@ -22,7 +22,18 @@ using Claude AI and returns a structured code review with scores and comments.
 - One class per file
 - No static classes except extensions
 - Prefer records for DTOs and commands
-- Always use primary constructors where possible
+
+## Primary Constructors (C# 12+)
+- Always use primary constructors instead of classic constructors when the constructor
+  only assigns parameters to fields/properties (e.g. dependency injection)
+- If a primary-constructor parameter is used by the class behavior, immediately copy it
+  into a `private readonly` field (e.g. `private readonly T _x = x;`) to guarantee
+  immutability — do not reference mutable primary-constructor parameters directly inside
+  methods
+- Place the primary constructor parameter list before the base class / interface list
+- Do not mutate primary-constructor parameters and do not duplicate assignments already
+  performed via the primary constructor
+- Reference: https://learn.microsoft.com/dotnet/csharp/programming-guide/classes-and-structs/instance-constructors#primary-constructors
 
 ## Architecture Rules
 - Follow SOLID principles strictly
