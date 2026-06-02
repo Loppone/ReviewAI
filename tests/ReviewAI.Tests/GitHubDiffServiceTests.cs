@@ -1,5 +1,6 @@
 using System.Net;
 using FluentAssertions;
+using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 using Octokit;
 using ReviewAI.Core.Common.Errors;
@@ -11,7 +12,7 @@ public class GitHubDiffServiceTests
 {
     private readonly IGitHubClient _gitHubClient = Substitute.For<IGitHubClient>();
 
-    private GitHubDiffService CreateService() => new(_gitHubClient);
+    private GitHubDiffService CreateService() => new(_gitHubClient, NullLogger<GitHubDiffService>.Instance);
 
     [Theory]
     [InlineData("")]

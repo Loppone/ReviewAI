@@ -3,6 +3,7 @@ using System.Text;
 using System.Text.Json;
 using Anthropic.SDK;
 using FluentAssertions;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using ReviewAI.Core.Common.Errors;
 using ReviewAI.Core.Configuration;
@@ -26,7 +27,7 @@ public class ClaudeReviewServiceTests
     [Fact]
     public async Task ReviewDiffAsync_WithEmptyDiff_ReturnsSuccessfulNoDiffResult()
     {
-        var service = new ClaudeReviewService(CreateClient(ToolUseResponse(ValidReviewInput)), CreateOptions());
+        var service = new ClaudeReviewService(CreateClient(ToolUseResponse(ValidReviewInput)), CreateOptions(), NullLogger<ClaudeReviewService>.Instance);
 
         var result = await service.ReviewDiffAsync("   ", CancellationToken.None);
 
@@ -37,7 +38,7 @@ public class ClaudeReviewServiceTests
     [Fact]
     public async Task ReviewDiffAsync_WhenToolUseReturnsValidReview_ReturnsParsedResult()
     {
-        var service = new ClaudeReviewService(CreateClient(ToolUseResponse(ValidReviewInput)), CreateOptions());
+        var service = new ClaudeReviewService(CreateClient(ToolUseResponse(ValidReviewInput)), CreateOptions(), NullLogger<ClaudeReviewService>.Instance);
 
         var result = await service.ReviewDiffAsync("diff --git a/Program.cs b/Program.cs", CancellationToken.None);
 
@@ -53,7 +54,7 @@ public class ClaudeReviewServiceTests
     public async Task ReviewDiffAsync_WhenResponseIsTextWithFenceAndPreamble_ParsesViaFallback()
     {
         var noisyText = "Sure! Here is the review you asked for:\n\n```json\n" + ValidReviewInput + "\n```\nHope it helps.";
-        var service = new ClaudeReviewService(CreateClient(TextResponse(noisyText)), CreateOptions());
+        var service = new ClaudeReviewService(CreateClient(TextResponse(noisyText)), CreateOptions(), NullLogger<ClaudeReviewService>.Instance);
 
         var result = await service.ReviewDiffAsync("diff --git a/Program.cs b/Program.cs", CancellationToken.None);
 
@@ -66,7 +67,7 @@ public class ClaudeReviewServiceTests
     public async Task ReviewDiffAsync_WhenResponseTruncated_ReturnsInvalidAiResponseError()
     {
         var service = new ClaudeReviewService(
-            CreateClient(ToolUseResponse(ValidReviewInput, stopReason: "max_tokens")), CreateOptions());
+            CreateClient(ToolUseResponse(ValidReviewInput, stopReason: "max_tokens")), CreateOptions(), NullLogger<ClaudeReviewService>.Instance);
 
         var result = await service.ReviewDiffAsync("diff --git a/Program.cs b/Program.cs", CancellationToken.None);
 
@@ -78,7 +79,7 @@ public class ClaudeReviewServiceTests
     public async Task ReviewDiffAsync_WhenToolUseInputMissingRequiredFields_ReturnsInvalidAiResponseError()
     {
         var service = new ClaudeReviewService(
-            CreateClient(ToolUseResponse("""{ "summary": "incomplete" }""")), CreateOptions());
+            CreateClient(ToolUseResponse("""{ "summary": "incomplete" }""")), CreateOptions(), NullLogger<ClaudeReviewService>.Instance);
 
         var result = await service.ReviewDiffAsync("diff --git a/Program.cs b/Program.cs", CancellationToken.None);
 
@@ -89,7 +90,7 @@ public class ClaudeReviewServiceTests
     [Fact]
     public async Task ReviewDiffAsync_WhenClaudeReturnsNonJsonText_ReturnsInvalidAiResponseError()
     {
-        var service = new ClaudeReviewService(CreateClient(TextResponse("this is not valid json")), CreateOptions());
+        var service = new ClaudeReviewService(CreateClient(TextResponse("this is not valid json")), CreateOptions(), NullLogger<ClaudeReviewService>.Instance);
 
         var result = await service.ReviewDiffAsync("diff --git a/Program.cs b/Program.cs", CancellationToken.None);
 
