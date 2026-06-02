@@ -1,5 +1,6 @@
 using MediatR;
 using Microsoft.AspNetCore.Mvc;
+using ReviewAI.Api.Http;
 using ReviewAI.Core.Features.ReviewPullRequest;
 
 namespace ReviewAI.Api.Controllers;
@@ -15,7 +16,7 @@ public sealed class ReviewController(IMediator mediator) : ControllerBase
     {
         var command = new ReviewPullRequestCommand(request.PullRequestUrl);
         var result = await _mediator.Send(command, cancellationToken);
-        return Ok(result);
+        return result.ToActionResult();
     }
 }
 

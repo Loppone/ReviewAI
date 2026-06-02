@@ -1,5 +1,8 @@
+using System.Text.Json;
 using Anthropic.SDK;
 using Anthropic.SDK.Messaging;
+using FluentResults;
+using ReviewAI.Core.Common.Errors;
 using ReviewAI.Core.Features.ReviewPullRequest;
 
 namespace ReviewAI.Core.Services;
@@ -8,30 +11,43 @@ public sealed class ClaudeReviewService(AnthropicClient anthropicClient) : IClau
 {
     private readonly AnthropicClient _anthropicClient = anthropicClient;
 
-    public async Task<ReviewPullRequestResult> ReviewDiffAsync(string diff, CancellationToken cancellationToken)
+    public async Task<Result<ReviewPullRequestResult>> ReviewDiffAsync(string diff, CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(diff))
         {
-            return new ReviewPullRequestResult(
+            return Result.Ok(new ReviewPullRequestResult(
                 Summary: "No diff provided.",
                 SeverityScore: 0m,
                 SecurityIssues: Array.Empty<string>(),
                 PerformanceIssues: Array.Empty<string>(),
                 NamingIssues: Array.Empty<string>(),
-                PatternIssues: Array.Empty<string>());
+                PatternIssues: Array.Empty<string>()));
         }
 
         var prompt = BuildPrompt(diff);
 
-        var response = await _anthropicClient.Messages.GetClaudeMessageAsync(new MessageParameters
+        string reviewText;
+        try
         {
-            Model = "claude-3.5",
-            Messages = new List<Message> { new Message(RoleType.User, prompt) },
-            MaxTokens = 500,
-            Temperature = 0.2m
-        }, cancellationToken);
+            var response = await _anthropicClient.Messages.GetClaudeMessageAsync(new MessageParameters
+            {
+                Model = "claude-3.5",
+                Messages = new List<Message> { new Message(RoleType.User, prompt) },
+                MaxTokens = 500,
+                Temperature = 0.2m
+            }, cancellationToken);
 
-        var reviewText = response?.FirstMessage?.Text ?? string.Empty;
+            reviewText = response?.FirstMessage?.Text ?? string.Empty;
+        }
+        catch (HttpRequestException ex)
+        {
+            return Result.Fail(new ExternalServiceError($"Network failure while contacting Claude: {ex.Message}"));
+        }
+        catch (Exception ex)
+        {
+            return Result.Fail(new ExternalServiceError($"Claude request failed: {ex.Message}"));
+        }
+
         return ParseReviewResponse(reviewText);
     }
 
@@ -43,42 +59,35 @@ public sealed class ClaudeReviewService(AnthropicClient anthropicClient) : IClau
                $"Here is the diff:\n\n{diff}";
     }
 
-    private static ReviewPullRequestResult ParseReviewResponse(string reviewText)
+    private static Result<ReviewPullRequestResult> ParseReviewResponse(string reviewText)
     {
-        // Fallback parser: look for JSON object inside the response.
         try
         {
-            var document = System.Text.Json.JsonDocument.Parse(reviewText);
+            using var document = JsonDocument.Parse(reviewText);
             var root = document.RootElement;
-            return new ReviewPullRequestResult(
+            return Result.Ok(new ReviewPullRequestResult(
                 Summary: root.GetProperty("summary").GetString() ?? "",
                 SeverityScore: root.GetProperty("severityScore").GetDecimal(),
                 SecurityIssues: ParseStringArray(root, "securityIssues"),
                 PerformanceIssues: ParseStringArray(root, "performanceIssues"),
                 NamingIssues: ParseStringArray(root, "namingIssues"),
-                PatternIssues: ParseStringArray(root, "patternIssues"));
+                PatternIssues: ParseStringArray(root, "patternIssues")));
         }
-        catch
+        catch (Exception ex) when (ex is JsonException or KeyNotFoundException or InvalidOperationException or FormatException)
         {
-            return new ReviewPullRequestResult(
-                Summary: reviewText,
-                SeverityScore: 0m,
-                SecurityIssues: Array.Empty<string>(),
-                PerformanceIssues: Array.Empty<string>(),
-                NamingIssues: Array.Empty<string>(),
-                PatternIssues: Array.Empty<string>());
+            return Result.Fail(new InvalidAiResponseError("Claude returned a response that is not valid JSON or is missing required fields."));
         }
     }
 
-    private static IReadOnlyList<string> ParseStringArray(System.Text.Json.JsonElement root, string propertyName)
+    private static IReadOnlyList<string> ParseStringArray(JsonElement root, string propertyName)
     {
-        if (!root.TryGetProperty(propertyName, out var property) || property.ValueKind != System.Text.Json.JsonValueKind.Array)
+        if (!root.TryGetProperty(propertyName, out var property) || property.ValueKind != JsonValueKind.Array)
         {
             return Array.Empty<string>();
         }
 
         return property.EnumerateArray()
-            .Where(item => item.ValueKind == System.Text.Json.JsonValueKind.String)
+            .Where(item => item.ValueKind == JsonValueKind.String)
             .Select(item => item.GetString() ?? string.Empty)
             .Where(item => !string.IsNullOrWhiteSpace(item))
             .ToArray();

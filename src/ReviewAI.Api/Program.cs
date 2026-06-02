@@ -7,9 +7,11 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddOpenApi();
 builder.Services.AddControllers();
-builder.Services.AddMediatR(cfg => cfg.RegisterServicesFromAssembly(typeof(Program).Assembly));
+builder.Services.AddMediatR(cfg => cfg.RegisterServicesFromAssemblies(
+    typeof(Program).Assembly,
+    typeof(ReviewAI.Core.Features.ReviewPullRequest.ReviewPullRequestCommand).Assembly));
 
-builder.Services.AddSingleton(_ =>
+builder.Services.AddSingleton<IGitHubClient>(_ =>
 {
     var token = Environment.GetEnvironmentVariable("GITHUB_TOKEN") ?? string.Empty;
     var client = new GitHubClient(new ProductHeaderValue("ReviewAI"));

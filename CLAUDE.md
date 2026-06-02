@@ -35,6 +35,23 @@ using Claude AI and returns a structured code review with scores and comments.
   performed via the primary constructor
 - Reference: https://learn.microsoft.com/dotnet/csharp/programming-guide/classes-and-structs/instance-constructors#primary-constructors
 
+## Result Pattern (FluentResults)
+- Use FluentResults (`Result` / `Result<T>`) for expected application failures — do NOT
+  throw exceptions for validation, not-found, external-dependency, or invalid-AI-response cases
+- Handlers and services return `Result` or `Result<T>`; the handler orchestrates and
+  short-circuits on the first failure (return it without calling downstream services)
+- Use typed `Error` classes (in `ReviewAI.Core/Common/Errors/`), never string parsing to
+  distinguish failures:
+  - `ValidationError` — invalid user input (malformed PR URL, invalid PR number) → HTTP 400
+  - `NotFoundError` — repository or pull request not found → HTTP 404
+  - `ExternalServiceError` — GitHub API, Anthropic SDK, network, or timeout failure → HTTP 502
+  - `InvalidAiResponseError` — Claude responded but broke the expected JSON contract → HTTP 502
+- Translate `Result` into HTTP responses only at the API boundary (e.g. the
+  `ToActionResult` extension in `ReviewAI.Api/Http/`); keep HTTP concerns out of Core
+- In Vertical Slice features, keep the Result flow inside the slice and the HTTP mapping at
+  the API boundary
+- Reserve exceptions for truly unexpected, unrecoverable failures
+
 ## Architecture Rules
 - Follow SOLID principles strictly
 - Use design patterns where appropriate (Strategy, Factory, Decorator, etc.)
@@ -54,6 +71,7 @@ using Claude AI and returns a structured code review with scores and comments.
 
 ## Dependencies
 - MediatR for CQRS
+- FluentResults for the Result pattern
 - Octokit.NET for GitHub API
 - Anthropic.SDK for Claude AI
 - Scalar for API documentation
