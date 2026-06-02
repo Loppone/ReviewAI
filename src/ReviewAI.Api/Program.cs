@@ -1,5 +1,6 @@
 using Anthropic.SDK;
 using Octokit;
+using ReviewAI.Api.Configuration;
 using ReviewAI.Api.Middleware;
 using ReviewAI.Core.Configuration;
 using ReviewAI.Core.Services;
@@ -20,6 +21,16 @@ builder.Services.AddOptions<AnthropicOptions>()
     .ValidateDataAnnotations()
     .ValidateOnStart();
 
+builder.Services.AddOptions<ResilienceOptions>()
+    .Bind(builder.Configuration.GetSection(ResilienceOptions.SectionName))
+    .ValidateDataAnnotations()
+    .ValidateOnStart();
+
+var resilienceOptions = builder.Configuration
+    .GetSection(ResilienceOptions.SectionName)
+    .Get<ResilienceOptions>() ?? new ResilienceOptions();
+builder.Services.AddAnthropicResilientHttpClient(resilienceOptions);
+
 builder.Services.AddSingleton<IGitHubClient>(_ =>
 {
     var token = Environment.GetEnvironmentVariable("GITHUB_TOKEN") ?? string.Empty;
@@ -35,11 +46,13 @@ builder.Services.AddSingleton<IGitHubClient>(_ =>
 builder.Services.AddSingleton<IGitHubDiffService, GitHubDiffService>();
 builder.Services.AddSingleton<IClaudeReviewService, ClaudeReviewService>();
 
-builder.Services.AddSingleton(_ =>
+builder.Services.AddSingleton(sp =>
 {
     var apiKey = Environment.GetEnvironmentVariable("ANTHROPIC_API_KEY") ?? string.Empty;
     var authentication = new APIAuthentication(apiKey);
-    return new AnthropicClient(authentication, new HttpClient(), null);
+    var httpClient = sp.GetRequiredService<IHttpClientFactory>()
+        .CreateClient(AnthropicHttpClientExtensions.AnthropicClientName);
+    return new AnthropicClient(authentication, httpClient, null);
 });
 
 var app = builder.Build();

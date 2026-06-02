@@ -21,6 +21,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\..\src\ReviewAI.Api\ReviewAI.Api.csproj" />
     <ProjectReference Include="..\..\src\ReviewAI.Core\ReviewAI.Core.csproj" />
   </ItemGroup>
 

@@ -37,6 +37,8 @@ public sealed class GitHubDiffService(IGitHubClient gitHubClient, ILogger<GitHub
 
         try
         {
+            // Octokit's IPullRequestsClient.Get exposes no CancellationToken overload, so this
+            // metadata call cannot be cancelled once in flight.
             var pullRequest = await _gitHubClient.Repository.PullRequest.Get(owner, repo, pullNumber);
             if (string.IsNullOrWhiteSpace(pullRequest.DiffUrl))
             {
@@ -44,7 +46,7 @@ public sealed class GitHubDiffService(IGitHubClient gitHubClient, ILogger<GitHub
                 return Result.Fail(new ExternalServiceError("Unable to retrieve diff for the specified pull request."));
             }
 
-            var response = await _gitHubClient.Connection.Get<string>(new Uri(pullRequest.DiffUrl), new Dictionary<string, string>(), "application/vnd.github.v3.diff");
+            var response = await _gitHubClient.Connection.Get<string>(new Uri(pullRequest.DiffUrl), new Dictionary<string, string>(), "application/vnd.github.v3.diff", cancellationToken);
             return Result.Ok(response.Body ?? string.Empty);
         }
         catch (NotFoundException)
