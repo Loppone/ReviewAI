@@ -130,18 +130,27 @@ Definiti in `ReviewAI.Core/Common/Errors/`:
 - ✅ **Validazione startup** (`ValidateOnStart` + DataAnnotations) — fail-fast.
 - ✅ **Model ID corretto** (`claude-sonnet-4-5`, verificato contro le costanti dell'SDK; eliminato `claude-3.5` non valido).
 - ✅ **Validazione URL PR** robusta (`Uri.TryCreate`, formato, numero).
-- ✅ **Test esistenti**: 21 test verdi (handler, `GitHubDiffService`, `ClaudeReviewService`, `AnthropicOptions`).
+- ✅ **Affidabilità Claude (P1)**: contratto di risposta garantito via **Forced Tool Use**
+  con **schema Strict** e **`ToolChoice` forzato** (`submit_code_review`); **deserializzazione
+  tipizzata** nel record (campi mancanti/invalidi → `InvalidAiResponseError`); **gestione
+  esplicita del troncamento** (`stop_reason == max_tokens` → `InvalidAiResponseError`);
+  **fallback tollerante** per risposte testuali (strip fence markdown/preamboli);
+  ri-sollevamento corretto della cancellazione. Nessuna nuova dipendenza.
+- ✅ **Test esistenti**: 25 test verdi (handler, `GitHubDiffService`, `ClaudeReviewService`
+  — inclusi nuovi test di robustezza: tool use, fallback fence+preambolo, troncamento,
+  campi mancanti —, `AnthropicOptions`).
 - ✅ **Seam testabili**: `IGitHubClient` (Octokit) per il mocking del path GitHub.
 - ✅ **Documentazione API** via Scalar (solo Development).
 
 ### In corso
 
-- 🔄 **P1 — Affidabilità Claude**: prossima attività pianificata (structured output / tool use + parsing robusto). Non ancora avviata.
-- 🔄 **MVP**: bloccato dal solo completamento del P1 (il P0 — model ID + config — è chiuso).
+- 🔄 **P2 — Osservabilità**: prossima priorità (`ILogger` nei servizi, logging degli errori
+  esterni e dei parse failure, global exception handler al boundary). Non ancora avviata.
+- 🔄 **MVP**: funzionalmente completo a livello di implementazione e test, in attesa di
+  validazione end-to-end contro servizi reali (P0 + P1 chiusi).
 
 ### Non ancora implementato
 
-- ❌ Structured output / tool use Anthropic; parsing tollerante (fence markdown, preamboli, troncamenti).
 - ❌ Logging / observability (`ILogger`, tracing, metrics).
 - ❌ Exception handler globale al boundary.
 - ❌ Autenticazione/autorizzazione sull'endpoint.
@@ -155,8 +164,6 @@ Definiti in `ReviewAI.Core/Common/Errors/`:
 
 Problemi già identificati e tracciati (riferiti ai report di analisi precedenti):
 
-- **Parsing Claude fragile** — funziona solo su JSON puro; nessuna tolleranza a fence markdown, preamboli testuali o JSON troncato → `InvalidAiResponseError` frequenti su input reali.
-- **Nessuno structured output** — il formato JSON non è forzato (no tool use / prefill); ci si affida all'istruzione "Return only JSON".
 - **Logging assente** — zero `ILogger`; gli errori esterni e di parsing vengono convertiti in `Result.Fail` **senza lasciare traccia** (stack trace e raw text persi).
 - **Exception handling globale assente** — un'eccezione fuori dai punti gestiti (es. `OverflowException` nel parser) produce un 500 grezzo non strutturato.
 - **Nessuna autenticazione** — l'endpoint è aperto: superficie diretta di abuso e di costo su Claude.
@@ -167,22 +174,22 @@ Problemi già identificati e tracciati (riferiti ai report di analisi precedenti
 
 Note di dettaglio aggiuntive (basse priorità):
 
-- `catch (Exception)` troppo generico in `ClaudeReviewService` → maschera bug di programmazione come `ExternalServiceError` (502).
-- **Cancellazione incoerente**: `GitHubDiffService` riceve il `CancellationToken` ma **non lo passa** alle chiamate Octokit; `ClaudeReviewService` lo passa ma classifica l'annullamento come `ExternalServiceError` (502).
-- `MaxTokens` default portato a 2048 (era 500): mitiga ma non elimina i troncamenti su PR estese.
+- `catch (Exception)` ancora presente in `ClaudeReviewService` per i fallimenti dell'SDK
+  (classificati come `ExternalServiceError` 502); la **cancellazione** è ora ri-sollevata
+  correttamente e non più mascherata come 502.
+- **Cancellazione incoerente in `GitHubDiffService`**: riceve il `CancellationToken` ma **non
+  lo passa** alle chiamate Octokit.
+- `MaxTokens` default 2048: il **troncamento è ora rilevato esplicitamente**
+  (`stop_reason == max_tokens`); resta da gestire il chunking di PR molto grandi.
 
 ---
 
 ## Roadmap prioritaria
 
-### P1 — Affidabilità Claude
+> **P1 — Affidabilità Claude: ✅ completato** (vedi sezione "Completato").
+> La prossima priorità è il **P2 — Osservabilità**.
 
-- Structured Output / Tool Use (formato a schema garantito).
-- Parsing robusto della risposta AI.
-- Gestione fence markdown e preamboli testuali.
-- Riduzione drastica degli `InvalidAiResponseError`.
-
-### P2 — Osservabilità
+### P2 — Osservabilità (prossima priorità)
 
 - Introduzione di `ILogger` nei servizi.
 - Logging degli errori esterni (con eccezione originale) prima del `Result.Fail`.
@@ -214,9 +221,12 @@ Note di dettaglio aggiuntive (basse priorità):
 
 ## Stato di maturità
 
-- **Stato attuale: Prototipo avanzato.** Scaffolding architetturale solido (CQRS, Result pattern, typed errors, config validata, DI pulita, test sui percorsi di errore). Una sola feature; integrazione Claude **non ancora validata end-to-end** contro l'API reale.
-- **Obiettivo successivo: MVP.** Sbloccato dal completamento del **P1** (affidabilità Claude): con structured output e parsing robusto la feature centrale produce risultati affidabili.
-- **Obiettivo finale: Production-ready.** Richiede P2–P4: observability, sicurezza, resilienza, CI/CD, health checks, test di integrazione.
+- **Stato attuale: MVP funzionalmente completo a livello di implementazione e test, in attesa
+  di validazione end-to-end contro servizi reali.** Scaffolding architetturale solido (CQRS,
+  Result pattern, typed errors, config validata, DI pulita) e **P0 + P1 chiusi**: il contratto
+  di risposta Claude è ora garantito (forced tool use + schema strict + parsing robusto).
+- **Obiettivo successivo: Production-ready.** Richiede P2–P4: observability (prossimo passo),
+  sicurezza, resilienza, CI/CD, health checks, test di integrazione.
 
 ---
 
@@ -227,8 +237,10 @@ Sezione di onboarding rapido per un nuovo sviluppatore (o per Claude Code in una
 ### Dove siamo arrivati
 
 - La pipeline `PR → diff → Claude → review strutturata` è implementata end-to-end a livello di codice.
-- Il **P0 è chiuso**: model ID valido (`claude-sonnet-4-5`) e configurazione Anthropic tipizzata + validata all'avvio.
-- Build pulita (0 warning/0 errori) e **21 test verdi**.
+- I **P0 e P1 sono chiusi**: model ID valido (`claude-sonnet-4-5`), configurazione Anthropic
+  tipizzata + validata all'avvio, e contratto di risposta Claude garantito via forced tool use
+  + schema strict (con fallback tollerante e gestione del troncamento).
+- Build pulita (0 warning/0 errori) e **25 test verdi**.
 - L'integrazione Claude **non è ancora stata provata contro l'API reale** (servono `ANTHROPIC_API_KEY` e `GITHUB_TOKEN` veri); la correttezza è coperta dai unit test.
 
 ### Cosa è stato deciso (standard non negoziabili)
@@ -241,19 +253,18 @@ Sezione di onboarding rapido per un nuovo sviluppatore (o per Claude Code in una
 
 ### Cosa fare dopo
 
-1. **Iniziare dal P1 — Affidabilità Claude** (priorità assoluta verso l'MVP):
-   - introdurre structured output / tool use Anthropic per garantire JSON a schema;
-   - rendere il parsing tollerante (fence markdown, preamboli, troncamenti);
-   - obiettivo: azzerare gli `InvalidAiResponseError` da formato.
-2. A seguire **P2 — Osservabilità** (`ILogger` + global exception handler): prerequisito per qualunque diagnosi in esercizio.
-3. Poi **P3–P4** (sicurezza, resilienza, CI/CD, health checks, test di integrazione) verso la production-readiness.
-4. Infine **P5** (evoluzione architetturale e nuove feature).
+1. **Iniziare dal P2 — Osservabilità** (prossima priorità): `ILogger` nei servizi, logging degli
+   errori esterni (con eccezione originale) prima del `Result.Fail`, logging dei parse failure
+   (estratto del raw text), global exception handler al boundary. Prerequisito per la diagnosi in esercizio.
+2. Poi **P3–P4** (sicurezza, resilienza, CI/CD, health checks, test di integrazione) verso la production-readiness.
+3. Infine **P5** (evoluzione architetturale e nuove feature).
+4. Validare l'integrazione Claude **end-to-end** contro l'API reale (richiede `ANTHROPIC_API_KEY` e `GITHUB_TOKEN`).
 
 ### Verifica rapida dell'ambiente
 
 ```bash
 dotnet build      # atteso: 0 warning, 0 errori
-dotnet test       # atteso: tutti i test verdi (21 alla data di questo documento)
+dotnet test       # atteso: tutti i test verdi (25 alla data di questo documento)
 ```
 
 Per una prova end-to-end reale servono `ANTHROPIC_API_KEY` e `GITHUB_TOKEN` validi; l'app espone Scalar in ambiente Development per esercitare l'endpoint `POST /api/review/pr`.
