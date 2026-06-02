@@ -75,6 +75,7 @@ using Claude AI and returns a structured code review with scores and comments.
 - Octokit.NET for GitHub API
 - Anthropic.SDK for Claude AI
 - Scalar for API documentation
+- Microsoft.Extensions.Http.Resilience for outbound HTTP resilience (retry/timeout, composition root only)
 - FluentAssertions + NSubstitute for testing
 
 ## What NOT to do

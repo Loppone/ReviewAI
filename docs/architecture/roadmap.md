@@ -150,8 +150,16 @@ Definiti in `ReviewAI.Core/Common/Errors/`:
 
 ### In corso
 
-- 🔄 **P3 — Sicurezza e affidabilità**: prossima priorità (auth, rate limiting,
-  `IHttpClientFactory`, Polly). Non ancora avviata.
+- 🔄 **P3 — Sicurezza e affidabilità**: avviata.
+  - ✅ **Slice A — Resilienza**: `AnthropicClient` ora consuma un `HttpClient` gestito da
+    **`IHttpClientFactory`** (named client `"Anthropic"`, `SocketsHttpHandler` con
+    `PooledConnectionLifetime`) con **pipeline di resilienza** (`Microsoft.Extensions.Http.Resilience`):
+    total timeout → **retry esponenziale con jitter** su transient (5xx/408/429/network) →
+    attempt timeout. Parametri da `ResilienceOptions` tipizzata + validata all'avvio
+    (`ValidateOnStart`). Eliminato il `new HttpClient()` (socket exhaustion). Resilienza
+    confinata alla composition root (nessun Polly nei servizi). Chiusura **parziale** del debito
+    cancellation: `CancellationToken` inoltrato al download del diff (`Connection.Get`).
+  - ⏭️ Rimanenti: auth endpoint, rate limiting, config validation avanzata.
 - 🔄 **MVP**: funzionalmente completo a livello di implementazione e test, in attesa di
   validazione end-to-end contro servizi reali (P0 + P1 + P2 chiusi).
 
@@ -159,7 +167,10 @@ Definiti in `ReviewAI.Core/Common/Errors/`:
 
 - ❌ Tracing distribuito e metrics (OpenTelemetry) — il **logging strutturato** è coperto da P2; tracing/metrics restano fuori scope.
 - ❌ Autenticazione/autorizzazione sull'endpoint.
-- ❌ Resilienza (timeout/retry/circuit breaker, `IHttpClientFactory`, Polly) e gestione rate-limit.
+- ⚠️ Resilienza: **fatta per il client Claude** (Slice A: `IHttpClientFactory` + retry/timeout via
+  `Microsoft.Extensions.Http.Resilience`). Restano fuori: **circuit breaker**, **resilienza del
+  client GitHub/Octokit** (richiede `HttpClientAdapter`) e **gestione rate-limit dedicata**.
+- ❌ Rate limiting lato API.
 - ❌ Health checks, CI/CD, test di integrazione (mapping HTTP end-to-end), monitoring.
 - ❌ Limiti/troncamento dimensione diff per PR molto grandi.
 
@@ -170,7 +181,9 @@ Definiti in `ReviewAI.Core/Common/Errors/`:
 Problemi già identificati e tracciati (riferiti ai report di analisi precedenti):
 
 - **Nessuna autenticazione** — l'endpoint è aperto: superficie diretta di abuso e di costo su Claude.
-- **Nessuna resilienza** — `AnthropicClient` creato con `new HttpClient()` (no `IHttpClientFactory`); nessun retry/timeout; rate-limit non gestiti.
+- ~~**Nessuna resilienza** — `AnthropicClient` creato con `new HttpClient()`~~ → **risolto (Slice A)** per
+  il client Claude: `IHttpClientFactory` + retry/timeout. Restano da fare circuit breaker, resilienza
+  Octokit e gestione rate-limit dedicata.
 - **Nessun rate limiting** lato API.
 - **Nessuna CI/CD** — build e test non automatizzati.
 - **Nessun health check**.
@@ -181,12 +194,11 @@ Note di dettaglio aggiuntive (basse priorità):
   (classificati come `ExternalServiceError` 502): può mascherare bug di programmazione, ma ora
   **logga l'eccezione** (P2) e la **cancellazione** è ri-sollevata correttamente (esclusa dal
   catch generico), non più mascherata come 502.
-- **Cancellazione GitHub non propagata** — `GitHubDiffService` riceve il `CancellationToken` ma
-  **non lo inoltra ancora** alle chiamate Octokit (`PullRequest.Get`, `Connection.Get<string>`):
-  le richieste GitHub **non possono essere annullate durante l'esecuzione della chiamata remota**.
-  Valutare la correzione nel contesto di **P3/P4**. *(La cancellazione lato Claude è invece
-  gestita correttamente da P2: l'`OperationCanceledException` è rilanciata e diventa un 499
-  nativo del framework.)*
+- **Cancellazione GitHub — chiusa parzialmente (Slice A)**: il `CancellationToken` è ora inoltrato al
+  **download del diff** (`Connection.Get<string>`, la chiamata pesante). Resta **non annullabile** la
+  chiamata di metadata `PullRequest.Get`, perché **Octokit non espone un overload con
+  `CancellationToken`** (limite dell'API esterna, annotato a commento nel servizio). *(La cancellazione
+  lato Claude è gestita da P2: l'`OperationCanceledException` è rilanciata → 499 nativo del framework.)*
 - `MaxTokens` default 2048: il **troncamento è ora rilevato esplicitamente**
   (`stop_reason == max_tokens`); resta da gestire il chunking di PR molto grandi.
 
@@ -195,7 +207,7 @@ Note di dettaglio aggiuntive (basse priorità):
 ## Roadmap prioritaria
 
 > **P1 — Affidabilità Claude e P2 — Osservabilità: ✅ completati** (vedi sezione "Completato").
-> La prossima priorità è il **P3 — Sicurezza e affidabilità**.
+> **P3 — Sicurezza e affidabilità: 🔄 in corso** (Slice A — Resilienza: chiusa).
 
 ### P2 — Osservabilità — ✅ COMPLETATO
 
@@ -205,13 +217,15 @@ Note di dettaglio aggiuntive (basse priorità):
 - ✅ Global exception handler al boundary API (`ProblemDetails`, RFC 7807).
 - ✅ Gestione corretta di `OperationCanceledException` (rethrow → 499 nativo del framework).
 
-### P3 — Sicurezza e affidabilità — ⏭️ PROSSIMA PRIORITÀ
+### P3 — Sicurezza e affidabilità — 🔄 IN CORSO
 
-- Authentication sull'endpoint.
-- Rate limiting.
-- Config validation avanzata (regole oltre le DataAnnotations di base).
-- `IHttpClientFactory` per i client HTTP.
-- Polly (retry/timeout/circuit breaker, gestione rate-limit).
+- ✅ **`IHttpClientFactory`** per il client Claude (Slice A).
+- ✅ **Resilienza** retry/timeout via `Microsoft.Extensions.Http.Resilience` (Polly sotto, confinato
+  alla composition root) — Slice A.
+- ⏭️ Authentication sull'endpoint.
+- ⏭️ Rate limiting.
+- ⏭️ Config validation avanzata (es. whitelist model ID, regole oltre le DataAnnotations di base).
+- ⏭️ Circuit breaker, resilienza client Octokit, gestione rate-limit dedicata.
 
 ### P4 — Production Readiness
 
@@ -252,7 +266,10 @@ Sezione di onboarding rapido per un nuovo sviluppatore (o per Claude Code in una
   tipizzata + validata all'avvio, contratto di risposta Claude garantito via forced tool use
   + schema strict (con fallback tollerante e gestione del troncamento), e osservabilità
   (logging strutturato + `GlobalExceptionHandler` → `ProblemDetails`).
-- Build pulita (0 warning/0 errori) e **25 test verdi**.
+- **P3 avviato — Slice A (Resilienza) chiusa**: client Claude su `IHttpClientFactory` + retry/timeout
+  (`Microsoft.Extensions.Http.Resilience`), `ResilienceOptions` validata all'avvio, `CancellationToken`
+  inoltrato al download del diff.
+- Build pulita (0 warning/0 errori) e **38 test verdi**.
 - L'integrazione Claude **non è ancora stata provata contro l'API reale** (servono `ANTHROPIC_API_KEY` e `GITHUB_TOKEN` veri); la correttezza è coperta dai unit test.
 
 ### Cosa è stato deciso (standard non negoziabili)
@@ -260,15 +277,15 @@ Sezione di onboarding rapido per un nuovo sviluppatore (o per Claude Code in una
 - **Result Pattern + Typed Errors** ovunque; mapping HTTP solo al boundary (`ToActionResult`).
 - **Configurazione via `IOptions<T>` con `ValidateOnStart`**; nessun valore hard-coded; segreti in env var.
 - **Vertical Slice + CQRS (MediatR)**; controller sottili; SOLID; primary constructors; una classe per file.
-- Stack fisso: Octokit, Anthropic SDK, FluentResults, Scalar. Niente Swagger/repository/AutoMapper/classi statiche. Nessun pacchetto nuovo senza accordo.
+- Stack fisso: Octokit, Anthropic SDK, FluentResults, Scalar, `Microsoft.Extensions.Http.Resilience`. Niente Swagger/repository/AutoMapper/classi statiche. Nessun pacchetto nuovo senza accordo.
 - Riferimenti: questo file, `CLAUDE.md` (standard di progetto), e la cronologia delle PR.
 
 ### Cosa fare dopo
 
-1. **Iniziare dal P3 — Sicurezza e affidabilità** (prossima priorità):
+1. **Proseguire P3 — Sicurezza e affidabilità** (Slice A — Resilienza già chiusa):
    - autenticazione sull'endpoint e rate limiting (contenere abuso e costi su Claude);
-   - `IHttpClientFactory` per i client HTTP + Polly (retry/timeout/circuit breaker, gestione rate-limit);
-   - valutare in questo contesto **l'inoltro del `CancellationToken` alle chiamate Octokit** in `GitHubDiffService` (debito aperto).
+   - estendere la resilienza: circuit breaker, client Octokit (`HttpClientAdapter`), gestione rate-limit dedicata;
+   - config validation avanzata (es. whitelist model ID).
 2. A seguire **P4 — Production Readiness** (health checks, CI/CD, test di integrazione end-to-end, monitoring/tracing-metrics).
 3. Validare l'integrazione Claude **end-to-end** contro l'API reale (`ANTHROPIC_API_KEY` + `GITHUB_TOKEN`).
 4. Infine **P5** (evoluzione architetturale e nuove feature).
@@ -277,7 +294,7 @@ Sezione di onboarding rapido per un nuovo sviluppatore (o per Claude Code in una
 
 ```bash
 dotnet build      # atteso: 0 warning, 0 errori
-dotnet test       # atteso: tutti i test verdi (25 alla data di questo documento)
+dotnet test       # atteso: tutti i test verdi (38 alla data di questo documento)
 ```
 
 Per una prova end-to-end reale servono `ANTHROPIC_API_KEY` e `GITHUB_TOKEN` validi; l'app espone Scalar in ambiente Development per esercitare l'endpoint `POST /api/review/pr`.
