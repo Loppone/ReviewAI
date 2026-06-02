@@ -1,12 +1,14 @@
 using FluentResults;
+using Microsoft.Extensions.Logging;
 using Octokit;
 using ReviewAI.Core.Common.Errors;
 
 namespace ReviewAI.Core.Services;
 
-public sealed class GitHubDiffService(IGitHubClient gitHubClient) : IGitHubDiffService
+public sealed class GitHubDiffService(IGitHubClient gitHubClient, ILogger<GitHubDiffService> logger) : IGitHubDiffService
 {
     private readonly IGitHubClient _gitHubClient = gitHubClient;
+    private readonly ILogger<GitHubDiffService> _logger = logger;
 
     public async Task<Result<string>> GetPullRequestDiff(string pullRequestUrl, CancellationToken cancellationToken)
     {
@@ -38,6 +40,7 @@ public sealed class GitHubDiffService(IGitHubClient gitHubClient) : IGitHubDiffS
             var pullRequest = await _gitHubClient.Repository.PullRequest.Get(owner, repo, pullNumber);
             if (string.IsNullOrWhiteSpace(pullRequest.DiffUrl))
             {
+                _logger.LogWarning("Pull request {Owner}/{Repo}#{PullNumber} returned no diff URL.", owner, repo, pullNumber);
                 return Result.Fail(new ExternalServiceError("Unable to retrieve diff for the specified pull request."));
             }
 
@@ -46,14 +49,17 @@ public sealed class GitHubDiffService(IGitHubClient gitHubClient) : IGitHubDiffS
         }
         catch (NotFoundException)
         {
+            _logger.LogWarning("Pull request {Owner}/{Repo}#{PullNumber} was not found.", owner, repo, pullNumber);
             return Result.Fail(new NotFoundError("The specified repository or pull request was not found."));
         }
         catch (ApiException ex)
         {
+            _logger.LogError(ex, "GitHub API request failed for {Owner}/{Repo}#{PullNumber}.", owner, repo, pullNumber);
             return Result.Fail(new ExternalServiceError($"GitHub API request failed: {ex.Message}"));
         }
         catch (HttpRequestException ex)
         {
+            _logger.LogError(ex, "Network failure while contacting GitHub for {Owner}/{Repo}#{PullNumber}.", owner, repo, pullNumber);
             return Result.Fail(new ExternalServiceError($"Network failure while contacting GitHub: {ex.Message}"));
         }
     }
