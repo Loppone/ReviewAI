@@ -1,5 +1,6 @@
 using Anthropic.SDK;
 using Octokit;
+using ReviewAI.Core.Configuration;
 using ReviewAI.Core.Services;
 using Scalar.AspNetCore;
 
@@ -10,6 +11,11 @@ builder.Services.AddControllers();
 builder.Services.AddMediatR(cfg => cfg.RegisterServicesFromAssemblies(
     typeof(Program).Assembly,
     typeof(ReviewAI.Core.Features.ReviewPullRequest.ReviewPullRequestCommand).Assembly));
+
+builder.Services.AddOptions<AnthropicOptions>()
+    .Bind(builder.Configuration.GetSection(AnthropicOptions.SectionName))
+    .ValidateDataAnnotations()
+    .ValidateOnStart();
 
 builder.Services.AddSingleton<IGitHubClient>(_ =>
 {
