@@ -136,6 +136,12 @@ Definiti in `ReviewAI.Core/Common/Errors/`:
   esplicita del troncamento** (`stop_reason == max_tokens` → `InvalidAiResponseError`);
   **fallback tollerante** per risposte testuali (strip fence markdown/preamboli);
   ri-sollevamento corretto della cancellazione. Nessuna nuova dipendenza.
+- ✅ **Osservabilità (P2)**: `ILogger<T>` nei servizi Core con **structured logging**; log degli
+  **errori esterni con eccezione originale** prima del `Result.Fail`; log dei **parse failure
+  con estratto raw troncato** (500 char); **`GlobalExceptionHandler`** (`IExceptionHandler`) →
+  **`ProblemDetails` (RFC 7807)** per le eccezioni inattese; **gestione corretta di
+  `OperationCanceledException`** (rethrow → 499 nativo del framework). Nuova dipendenza:
+  `Microsoft.Extensions.Logging.Abstractions`.
 - ✅ **Test esistenti**: 25 test verdi (handler, `GitHubDiffService`, `ClaudeReviewService`
   — inclusi nuovi test di robustezza: tool use, fallback fence+preambolo, troncamento,
   campi mancanti —, `AnthropicOptions`).
@@ -144,15 +150,14 @@ Definiti in `ReviewAI.Core/Common/Errors/`:
 
 ### In corso
 
-- 🔄 **P2 — Osservabilità**: prossima priorità (`ILogger` nei servizi, logging degli errori
-  esterni e dei parse failure, global exception handler al boundary). Non ancora avviata.
+- 🔄 **P3 — Sicurezza e affidabilità**: prossima priorità (auth, rate limiting,
+  `IHttpClientFactory`, Polly). Non ancora avviata.
 - 🔄 **MVP**: funzionalmente completo a livello di implementazione e test, in attesa di
-  validazione end-to-end contro servizi reali (P0 + P1 chiusi).
+  validazione end-to-end contro servizi reali (P0 + P1 + P2 chiusi).
 
 ### Non ancora implementato
 
-- ❌ Logging / observability (`ILogger`, tracing, metrics).
-- ❌ Exception handler globale al boundary.
+- ❌ Tracing distribuito e metrics (OpenTelemetry) — il **logging strutturato** è coperto da P2; tracing/metrics restano fuori scope.
 - ❌ Autenticazione/autorizzazione sull'endpoint.
 - ❌ Resilienza (timeout/retry/circuit breaker, `IHttpClientFactory`, Polly) e gestione rate-limit.
 - ❌ Health checks, CI/CD, test di integrazione (mapping HTTP end-to-end), monitoring.
@@ -164,8 +169,6 @@ Definiti in `ReviewAI.Core/Common/Errors/`:
 
 Problemi già identificati e tracciati (riferiti ai report di analisi precedenti):
 
-- **Logging assente** — zero `ILogger`; gli errori esterni e di parsing vengono convertiti in `Result.Fail` **senza lasciare traccia** (stack trace e raw text persi).
-- **Exception handling globale assente** — un'eccezione fuori dai punti gestiti (es. `OverflowException` nel parser) produce un 500 grezzo non strutturato.
 - **Nessuna autenticazione** — l'endpoint è aperto: superficie diretta di abuso e di costo su Claude.
 - **Nessuna resilienza** — `AnthropicClient` creato con `new HttpClient()` (no `IHttpClientFactory`); nessun retry/timeout; rate-limit non gestiti.
 - **Nessun rate limiting** lato API.
@@ -174,11 +177,16 @@ Problemi già identificati e tracciati (riferiti ai report di analisi precedenti
 
 Note di dettaglio aggiuntive (basse priorità):
 
-- `catch (Exception)` ancora presente in `ClaudeReviewService` per i fallimenti dell'SDK
-  (classificati come `ExternalServiceError` 502); la **cancellazione** è ora ri-sollevata
-  correttamente e non più mascherata come 502.
-- **Cancellazione incoerente in `GitHubDiffService`**: riceve il `CancellationToken` ma **non
-  lo passa** alle chiamate Octokit.
+- `catch (Exception)` ancora generico in `ClaudeReviewService` per i fallimenti dell'SDK
+  (classificati come `ExternalServiceError` 502): può mascherare bug di programmazione, ma ora
+  **logga l'eccezione** (P2) e la **cancellazione** è ri-sollevata correttamente (esclusa dal
+  catch generico), non più mascherata come 502.
+- **Cancellazione GitHub non propagata** — `GitHubDiffService` riceve il `CancellationToken` ma
+  **non lo inoltra ancora** alle chiamate Octokit (`PullRequest.Get`, `Connection.Get<string>`):
+  le richieste GitHub **non possono essere annullate durante l'esecuzione della chiamata remota**.
+  Valutare la correzione nel contesto di **P3/P4**. *(La cancellazione lato Claude è invece
+  gestita correttamente da P2: l'`OperationCanceledException` è rilanciata e diventa un 499
+  nativo del framework.)*
 - `MaxTokens` default 2048: il **troncamento è ora rilevato esplicitamente**
   (`stop_reason == max_tokens`); resta da gestire il chunking di PR molto grandi.
 
@@ -186,17 +194,18 @@ Note di dettaglio aggiuntive (basse priorità):
 
 ## Roadmap prioritaria
 
-> **P1 — Affidabilità Claude: ✅ completato** (vedi sezione "Completato").
-> La prossima priorità è il **P2 — Osservabilità**.
+> **P1 — Affidabilità Claude e P2 — Osservabilità: ✅ completati** (vedi sezione "Completato").
+> La prossima priorità è il **P3 — Sicurezza e affidabilità**.
 
-### P2 — Osservabilità (prossima priorità)
+### P2 — Osservabilità — ✅ COMPLETATO
 
-- Introduzione di `ILogger` nei servizi.
-- Logging degli errori esterni (con eccezione originale) prima del `Result.Fail`.
-- Logging dei parse failures (incluso un estratto del raw text del modello).
-- Global exception handler al boundary API.
+- ✅ Introduzione di `ILogger` nei servizi (structured logging).
+- ✅ Logging degli errori esterni (con eccezione originale) prima del `Result.Fail`.
+- ✅ Logging dei parse failures (incluso un estratto **troncato** del raw text del modello).
+- ✅ Global exception handler al boundary API (`ProblemDetails`, RFC 7807).
+- ✅ Gestione corretta di `OperationCanceledException` (rethrow → 499 nativo del framework).
 
-### P3 — Sicurezza e affidabilità
+### P3 — Sicurezza e affidabilità — ⏭️ PROSSIMA PRIORITÀ
 
 - Authentication sull'endpoint.
 - Rate limiting.
@@ -223,10 +232,12 @@ Note di dettaglio aggiuntive (basse priorità):
 
 - **Stato attuale: MVP funzionalmente completo a livello di implementazione e test, in attesa
   di validazione end-to-end contro servizi reali.** Scaffolding architetturale solido (CQRS,
-  Result pattern, typed errors, config validata, DI pulita) e **P0 + P1 chiusi**: il contratto
-  di risposta Claude è ora garantito (forced tool use + schema strict + parsing robusto).
-- **Obiettivo successivo: Production-ready.** Richiede P2–P4: observability (prossimo passo),
-  sicurezza, resilienza, CI/CD, health checks, test di integrazione.
+  Result pattern, typed errors, config validata, DI pulita) e **P0 + P1 + P2 chiusi**: il contratto
+  di risposta Claude è garantito (forced tool use + schema strict + parsing robusto) e
+  l'osservabilità è in essere (logging strutturato + global exception handler).
+- **Obiettivo successivo: Production-ready.** Richiede **P3–P4**: sicurezza (auth, rate limiting),
+  resilienza (`IHttpClientFactory`, Polly), CI/CD, health checks, test di integrazione,
+  monitoring (tracing/metrics).
 
 ---
 
@@ -237,9 +248,10 @@ Sezione di onboarding rapido per un nuovo sviluppatore (o per Claude Code in una
 ### Dove siamo arrivati
 
 - La pipeline `PR → diff → Claude → review strutturata` è implementata end-to-end a livello di codice.
-- I **P0 e P1 sono chiusi**: model ID valido (`claude-sonnet-4-5`), configurazione Anthropic
-  tipizzata + validata all'avvio, e contratto di risposta Claude garantito via forced tool use
-  + schema strict (con fallback tollerante e gestione del troncamento).
+- I **P0, P1 e P2 sono chiusi**: model ID valido (`claude-sonnet-4-5`), configurazione Anthropic
+  tipizzata + validata all'avvio, contratto di risposta Claude garantito via forced tool use
+  + schema strict (con fallback tollerante e gestione del troncamento), e osservabilità
+  (logging strutturato + `GlobalExceptionHandler` → `ProblemDetails`).
 - Build pulita (0 warning/0 errori) e **25 test verdi**.
 - L'integrazione Claude **non è ancora stata provata contro l'API reale** (servono `ANTHROPIC_API_KEY` e `GITHUB_TOKEN` veri); la correttezza è coperta dai unit test.
 
@@ -253,12 +265,13 @@ Sezione di onboarding rapido per un nuovo sviluppatore (o per Claude Code in una
 
 ### Cosa fare dopo
 
-1. **Iniziare dal P2 — Osservabilità** (prossima priorità): `ILogger` nei servizi, logging degli
-   errori esterni (con eccezione originale) prima del `Result.Fail`, logging dei parse failure
-   (estratto del raw text), global exception handler al boundary. Prerequisito per la diagnosi in esercizio.
-2. Poi **P3–P4** (sicurezza, resilienza, CI/CD, health checks, test di integrazione) verso la production-readiness.
-3. Infine **P5** (evoluzione architetturale e nuove feature).
-4. Validare l'integrazione Claude **end-to-end** contro l'API reale (richiede `ANTHROPIC_API_KEY` e `GITHUB_TOKEN`).
+1. **Iniziare dal P3 — Sicurezza e affidabilità** (prossima priorità):
+   - autenticazione sull'endpoint e rate limiting (contenere abuso e costi su Claude);
+   - `IHttpClientFactory` per i client HTTP + Polly (retry/timeout/circuit breaker, gestione rate-limit);
+   - valutare in questo contesto **l'inoltro del `CancellationToken` alle chiamate Octokit** in `GitHubDiffService` (debito aperto).
+2. A seguire **P4 — Production Readiness** (health checks, CI/CD, test di integrazione end-to-end, monitoring/tracing-metrics).
+3. Validare l'integrazione Claude **end-to-end** contro l'API reale (`ANTHROPIC_API_KEY` + `GITHUB_TOKEN`).
+4. Infine **P5** (evoluzione architetturale e nuove feature).
 
 ### Verifica rapida dell'ambiente
 
