@@ -2,14 +2,17 @@ using System.Text.Json;
 using Anthropic.SDK;
 using Anthropic.SDK.Messaging;
 using FluentResults;
+using Microsoft.Extensions.Options;
 using ReviewAI.Core.Common.Errors;
+using ReviewAI.Core.Configuration;
 using ReviewAI.Core.Features.ReviewPullRequest;
 
 namespace ReviewAI.Core.Services;
 
-public sealed class ClaudeReviewService(AnthropicClient anthropicClient) : IClaudeReviewService
+public sealed class ClaudeReviewService(AnthropicClient anthropicClient, IOptions<AnthropicOptions> options) : IClaudeReviewService
 {
     private readonly AnthropicClient _anthropicClient = anthropicClient;
+    private readonly AnthropicOptions _options = options.Value;
 
     public async Task<Result<ReviewPullRequestResult>> ReviewDiffAsync(string diff, CancellationToken cancellationToken)
     {
@@ -31,10 +34,10 @@ public sealed class ClaudeReviewService(AnthropicClient anthropicClient) : IClau
         {
             var response = await _anthropicClient.Messages.GetClaudeMessageAsync(new MessageParameters
             {
-                Model = "claude-3.5",
+                Model = _options.Model,
                 Messages = new List<Message> { new Message(RoleType.User, prompt) },
-                MaxTokens = 500,
-                Temperature = 0.2m
+                MaxTokens = _options.MaxTokens,
+                Temperature = _options.Temperature
             }, cancellationToken);
 
             reviewText = response?.FirstMessage?.Text ?? string.Empty;

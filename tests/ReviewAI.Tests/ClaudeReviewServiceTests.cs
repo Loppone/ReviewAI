@@ -2,7 +2,9 @@ using System.Net;
 using System.Text;
 using Anthropic.SDK;
 using FluentAssertions;
+using Microsoft.Extensions.Options;
 using ReviewAI.Core.Common.Errors;
+using ReviewAI.Core.Configuration;
 using ReviewAI.Core.Services;
 
 namespace ReviewAI.Tests;
@@ -12,7 +14,7 @@ public class ClaudeReviewServiceTests
     [Fact]
     public async Task ReviewDiffAsync_WithEmptyDiff_ReturnsSuccessfulNoDiffResult()
     {
-        var service = new ClaudeReviewService(CreateClient("ignored"));
+        var service = new ClaudeReviewService(CreateClient("ignored"), CreateOptions());
 
         var result = await service.ReviewDiffAsync("   ", CancellationToken.None);
 
@@ -23,13 +25,16 @@ public class ClaudeReviewServiceTests
     [Fact]
     public async Task ReviewDiffAsync_WhenClaudeReturnsMalformedJson_ReturnsInvalidAiResponseError()
     {
-        var service = new ClaudeReviewService(CreateClient("this is not valid json"));
+        var service = new ClaudeReviewService(CreateClient("this is not valid json"), CreateOptions());
 
         var result = await service.ReviewDiffAsync("diff --git a/Program.cs b/Program.cs", CancellationToken.None);
 
         result.IsFailed.Should().BeTrue();
         result.HasError<InvalidAiResponseError>().Should().BeTrue();
     }
+
+    private static IOptions<AnthropicOptions> CreateOptions() =>
+        Options.Create(new AnthropicOptions { Model = "claude-sonnet-4-5", MaxTokens = 2048, Temperature = 0.2m });
 
     private static AnthropicClient CreateClient(string assistantText)
     {
@@ -38,7 +43,7 @@ public class ClaudeReviewServiceTests
           "id": "msg_test",
           "type": "message",
           "role": "assistant",
-          "model": "claude-3.5",
+          "model": "claude-sonnet-4-5",
           "content": [{ "type": "text", "text": {{System.Text.Json.JsonSerializer.Serialize(assistantText)}} }],
           "stop_reason": "end_turn",
           "stop_sequence": null,
