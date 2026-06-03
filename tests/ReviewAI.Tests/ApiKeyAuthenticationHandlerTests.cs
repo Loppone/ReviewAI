@@ -1,4 +1,6 @@
+using System.Security.Claims;
 using System.Text.Encodings.Web;
+using System.Text.RegularExpressions;
 using FluentAssertions;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Http;
@@ -106,5 +108,60 @@ public class ApiKeyAuthenticationHandlerTests
 
         result.Succeeded.Should().BeFalse();
         result.Failure.Should().NotBeNull();
+    }
+
+    [Fact]
+    public async Task Authenticate_WithValidKey_SetsNameIdentifierFingerprintClaim()
+    {
+        var fingerprint = await AuthenticateAndGetFingerprintAsync(ValidKey);
+
+        fingerprint.Should().NotBeNullOrWhiteSpace();
+    }
+
+    [Fact]
+    public async Task Authenticate_Fingerprint_DoesNotLeakRawKey()
+    {
+        var fingerprint = await AuthenticateAndGetFingerprintAsync(ValidKey);
+
+        fingerprint.Should().NotBe(ValidKey);
+        fingerprint.Should().NotContain(ValidKey);
+    }
+
+    [Fact]
+    public async Task Authenticate_Fingerprint_Is16HexChars()
+    {
+        var fingerprint = await AuthenticateAndGetFingerprintAsync(ValidKey);
+
+        Regex.IsMatch(fingerprint!, "^[0-9A-F]{16}$").Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task Authenticate_Fingerprint_IsStableForSameKey()
+    {
+        var first = await AuthenticateAndGetFingerprintAsync(ValidKey);
+        var second = await AuthenticateAndGetFingerprintAsync(ValidKey);
+
+        second.Should().Be(first);
+    }
+
+    [Fact]
+    public async Task Authenticate_Fingerprint_DiffersBetweenKeys()
+    {
+        var first = await AuthenticateAndGetFingerprintAsync(ValidKey);
+        var second = await AuthenticateAndGetFingerprintAsync(RotationKey);
+
+        second.Should().NotBe(first);
+    }
+
+    private static async Task<string?> AuthenticateAndGetFingerprintAsync(string key)
+    {
+        var (handler, _) = await CreateHandlerAsync(
+            OptionsWith(ValidKey, RotationKey),
+            ctx => ctx.Request.Headers[HeaderName] = key);
+
+        var result = await handler.AuthenticateAsync();
+
+        result.Succeeded.Should().BeTrue();
+        return result.Principal!.FindFirstValue(ClaimTypes.NameIdentifier);
     }
 }

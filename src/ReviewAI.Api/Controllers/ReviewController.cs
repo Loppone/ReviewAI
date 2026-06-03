@@ -1,6 +1,8 @@
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
+using ReviewAI.Api.Configuration;
 using ReviewAI.Api.Http;
 using ReviewAI.Core.Features.ReviewPullRequest;
 
@@ -14,6 +16,7 @@ public sealed class ReviewController(IMediator mediator) : ControllerBase
     private readonly IMediator _mediator = mediator;
 
     [HttpPost("pr")]
+    [EnableRateLimiting(RateLimitPolicies.ReviewPerApiKey)]
     public async Task<IActionResult> ReviewPullRequest([FromBody] ReviewPullRequestRequest request, CancellationToken cancellationToken)
     {
         var command = new ReviewPullRequestCommand(request.PullRequestUrl);

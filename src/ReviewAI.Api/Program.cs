@@ -42,6 +42,13 @@ builder.Services.AddOptions<ApiKeyAuthOptions>()
 
 builder.Services.AddSingleton<IValidateOptions<ApiKeyAuthOptions>, ApiKeyAuthOptionsValidator>();
 
+builder.Services.AddOptions<RateLimitOptions>()
+    .Bind(builder.Configuration.GetSection(RateLimitOptions.SectionName))
+    .ValidateDataAnnotations()
+    .ValidateOnStart();
+
+builder.Services.AddReviewRateLimiter();
+
 builder.Services.AddAuthentication(ApiKeyAuthenticationDefaults.AuthenticationScheme)
     .AddScheme<AuthenticationSchemeOptions, ApiKeyAuthenticationHandler>(
         ApiKeyAuthenticationDefaults.AuthenticationScheme, configureOptions: null);
@@ -90,6 +97,7 @@ if (app.Environment.IsDevelopment())
 app.UseHttpsRedirection();
 
 app.UseAuthentication();
+app.UseRateLimiter();
 app.UseAuthorization();
 
 app.MapControllers();
