@@ -1,5 +1,8 @@
 using Anthropic.SDK;
+using Microsoft.AspNetCore.Authentication;
+using Microsoft.Extensions.Options;
 using Octokit;
+using ReviewAI.Api.Authentication;
 using ReviewAI.Api.Configuration;
 using ReviewAI.Api.Middleware;
 using ReviewAI.Core.Configuration;
@@ -25,6 +28,25 @@ builder.Services.AddOptions<ResilienceOptions>()
     .Bind(builder.Configuration.GetSection(ResilienceOptions.SectionName))
     .ValidateDataAnnotations()
     .ValidateOnStart();
+
+builder.Services.AddOptions<ApiKeyAuthOptions>()
+    .Bind(builder.Configuration.GetSection(ApiKeyAuthOptions.SectionName))
+    .Configure(opts =>
+    {
+        var raw = Environment.GetEnvironmentVariable("REVIEWAI_API_KEYS");
+        opts.ApiKeys = (raw ?? string.Empty)
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+    })
+    .ValidateDataAnnotations()
+    .ValidateOnStart();
+
+builder.Services.AddSingleton<IValidateOptions<ApiKeyAuthOptions>, ApiKeyAuthOptionsValidator>();
+
+builder.Services.AddAuthentication(ApiKeyAuthenticationDefaults.AuthenticationScheme)
+    .AddScheme<AuthenticationSchemeOptions, ApiKeyAuthenticationHandler>(
+        ApiKeyAuthenticationDefaults.AuthenticationScheme, configureOptions: null);
+
+builder.Services.AddAuthorization();
 
 var resilienceOptions = builder.Configuration
     .GetSection(ResilienceOptions.SectionName)
@@ -66,6 +88,9 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseHttpsRedirection();
+
+app.UseAuthentication();
+app.UseAuthorization();
 
 app.MapControllers();
 
