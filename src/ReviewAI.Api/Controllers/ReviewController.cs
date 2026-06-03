@@ -1,4 +1,5 @@
 using MediatR;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using ReviewAI.Api.Http;
 using ReviewAI.Core.Features.ReviewPullRequest;
@@ -6,6 +7,7 @@ using ReviewAI.Core.Features.ReviewPullRequest;
 namespace ReviewAI.Api.Controllers;
 
 [ApiController]
+[Authorize]
 [Route("api/review")]
 public sealed class ReviewController(IMediator mediator) : ControllerBase
 {
