@@ -43,9 +43,24 @@ public sealed class ApiKeyAuthenticationHandler(
         }
 
         var identity = new ClaimsIdentity(ApiKeyAuthenticationDefaults.AuthenticationScheme);
+        identity.AddClaim(new Claim(ClaimTypes.NameIdentifier, Fingerprint(providedKey)));
         var principal = new ClaimsPrincipal(identity);
         var ticket = new AuthenticationTicket(principal, ApiKeyAuthenticationDefaults.AuthenticationScheme);
         return Task.FromResult(AuthenticateResult.Success(ticket));
+    }
+
+    /// <summary>
+    /// Derives a stable, non-reversible identifier for the matched key, used downstream as a
+    /// rate-limiting partition key. SHA-256 truncated to 8 bytes (16 hex chars): one-way, so
+    /// the secret key material never leaves this handler (safe in logs, metrics, limiter state);
+    /// stable per key; distinct per key. 64 bits are ample to separate the handful of configured
+    /// keys — this is a bucket discriminator, not a security boundary (authentication already
+    /// happened above). Computed once, after the constant-time match, on a single string.
+    /// </summary>
+    private static string Fingerprint(string key)
+    {
+        var hash = SHA256.HashData(Encoding.UTF8.GetBytes(key));
+        return Convert.ToHexString(hash.AsSpan(0, 8));
     }
 
     private bool IsKnownKey(string providedKey)

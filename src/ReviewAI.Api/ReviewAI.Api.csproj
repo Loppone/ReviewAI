@@ -17,4 +17,8 @@
     <ProjectReference Include="..\ReviewAI.Core\ReviewAI.Core.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <InternalsVisibleTo Include="ReviewAI.Tests" />
+  </ItemGroup>
+
 </Project>
