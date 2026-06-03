@@ -24,6 +24,8 @@ builder.Services.AddOptions<AnthropicOptions>()
     .ValidateDataAnnotations()
     .ValidateOnStart();
 
+builder.Services.AddSingleton<IValidateOptions<AnthropicOptions>, AnthropicOptionsValidator>();
+
 builder.Services.AddOptions<ResilienceOptions>()
     .Bind(builder.Configuration.GetSection(ResilienceOptions.SectionName))
     .ValidateDataAnnotations()

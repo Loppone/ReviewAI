@@ -29,4 +29,12 @@ public sealed class AnthropicOptions
     /// </summary>
     [Range(0.0, 1.0, ErrorMessage = "Anthropic:Temperature must be between 0.0 and 1.0.")]
     public decimal Temperature { get; set; }
+
+    /// <summary>
+    /// Whitelist of model identifiers this deployment is allowed to use. <see cref="Model"/>
+    /// must be one of these, and each entry must be a model supported by ReviewAI
+    /// (<see cref="KnownAnthropicModels"/>). The subset/membership rules are cross-property
+    /// and are enforced by <see cref="AnthropicOptionsValidator"/>, not by data annotations.
+    /// </summary>
+    public IReadOnlyList<string> AllowedModels { get; set; } = Array.Empty<string>();
 }
