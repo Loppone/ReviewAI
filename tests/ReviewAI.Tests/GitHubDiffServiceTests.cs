@@ -10,6 +10,7 @@ namespace ReviewAI.Tests;
 
 public class GitHubDiffServiceTests
 {
+    private const string DiffMediaType = "application/vnd.github.v3.diff";
     private readonly IGitHubClient _gitHubClient = Substitute.For<IGitHubClient>();
 
     private GitHubDiffService CreateService() => new(_gitHubClient, NullLogger<GitHubDiffService>.Instance);
@@ -35,8 +36,7 @@ public class GitHubDiffServiceTests
     public async Task GetPullRequestDiff_WhenPullRequestNotFound_ReturnsNotFoundError()
     {
         var service = CreateService();
-        _gitHubClient.Repository.PullRequest.Get("owner", "repo", 42)
-            .Returns<Task<PullRequest>>(_ => throw new NotFoundException("not found", HttpStatusCode.NotFound));
+        DiffCall().Returns<Task<IApiResponse<string>>>(_ => throw new NotFoundException("not found", HttpStatusCode.NotFound));
 
         var result = await service.GetPullRequestDiff("https://github.com/owner/repo/pull/42", CancellationToken.None);
 
@@ -48,8 +48,7 @@ public class GitHubDiffServiceTests
     public async Task GetPullRequestDiff_WhenGitHubApiFails_ReturnsExternalServiceError()
     {
         var service = CreateService();
-        _gitHubClient.Repository.PullRequest.Get("owner", "repo", 42)
-            .Returns<Task<PullRequest>>(_ => throw new ApiException("boom", HttpStatusCode.InternalServerError));
+        DiffCall().Returns<Task<IApiResponse<string>>>(_ => throw new ApiException("boom", HttpStatusCode.InternalServerError));
 
         var result = await service.GetPullRequestDiff("https://github.com/owner/repo/pull/42", CancellationToken.None);
 
@@ -58,34 +57,69 @@ public class GitHubDiffServiceTests
     }
 
     [Fact]
-    public async Task GetPullRequestDiff_ForwardsCancellationTokenToDiffDownload()
+    public async Task GetPullRequestDiff_WhenRateLimited_ReturnsExternalServiceError()
+    {
+        var service = CreateService();
+        var rateLimit = new RateLimit(5000, 0, DateTimeOffset.UtcNow.AddHours(1).ToUnixTimeSeconds());
+        var apiInfo = new ApiInfo(
+            new Dictionary<string, Uri>(),
+            new List<string>(),
+            new List<string>(),
+            "etag",
+            rateLimit,
+            TimeSpan.Zero);
+        var response = Substitute.For<IResponse>();
+        response.ApiInfo.Returns(apiInfo);
+        DiffCall().Returns<Task<IApiResponse<string>>>(_ => throw new RateLimitExceededException(response));
+
+        var result = await service.GetPullRequestDiff("https://github.com/owner/repo/pull/42", CancellationToken.None);
+
+        result.IsFailed.Should().BeTrue();
+        result.HasError<ExternalServiceError>().Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task GetPullRequestDiff_FetchesDiffInSingleCancellableCall()
     {
         var service = CreateService();
         using var cts = new CancellationTokenSource();
         var token = cts.Token;
 
-        _gitHubClient.Repository.PullRequest.Get("owner", "repo", 42)
-            .Returns(PullRequestWithDiffUrl("https://github.com/owner/repo/pull/42.diff"));
-
         var apiResponse = Substitute.For<IApiResponse<string>>();
         apiResponse.Body.Returns("diff-content");
-        _gitHubClient.Connection.Get<string>(Arg.Any<Uri>(), Arg.Any<IDictionary<string, string>>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
-            .Returns(apiResponse);
+        DiffCall(token).Returns(apiResponse);
 
         var result = await service.GetPullRequestDiff("https://github.com/owner/repo/pull/42", token);
 
         result.IsSuccess.Should().BeTrue();
         result.Value.Should().Be("diff-content");
+
+        // A single cancellable call against the pull request endpoint with the diff media type.
         await _gitHubClient.Connection.Received(1).Get<string>(
-            Arg.Any<Uri>(), Arg.Any<IDictionary<string, string>>(), "application/vnd.github.v3.diff", token);
+            Arg.Is<Uri>(u => u.ToString() == "repos/owner/repo/pulls/42"),
+            Arg.Any<IDictionary<string, string>>(),
+            DiffMediaType,
+            token);
+        await _gitHubClient.Repository.PullRequest.DidNotReceiveWithAnyArgs().Get(default!, default!, default);
     }
 
-    private static PullRequest PullRequestWithDiffUrl(string diffUrl)
+    [Fact]
+    public async Task GetPullRequestDiff_WithEmptyDiffBody_ReturnsEmptyString()
     {
-        var pullRequest = new PullRequest();
-        typeof(PullRequest).GetProperty(nameof(PullRequest.DiffUrl))!
-            .GetSetMethod(nonPublic: true)!
-            .Invoke(pullRequest, [diffUrl]);
-        return pullRequest;
+        var service = CreateService();
+        var apiResponse = Substitute.For<IApiResponse<string>>();
+        apiResponse.Body.Returns((string?)null);
+        DiffCall().Returns(apiResponse);
+
+        var result = await service.GetPullRequestDiff("https://github.com/owner/repo/pull/42", CancellationToken.None);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Should().BeEmpty();
     }
+
+    private Task<IApiResponse<string>> DiffCall(CancellationToken token) =>
+        _gitHubClient.Connection.Get<string>(Arg.Any<Uri>(), Arg.Any<IDictionary<string, string>>(), DiffMediaType, token);
+
+    private Task<IApiResponse<string>> DiffCall() =>
+        _gitHubClient.Connection.Get<string>(Arg.Any<Uri>(), Arg.Any<IDictionary<string, string>>(), DiffMediaType, Arg.Any<CancellationToken>());
 }

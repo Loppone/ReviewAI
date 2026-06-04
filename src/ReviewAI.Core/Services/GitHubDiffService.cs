@@ -37,22 +37,29 @@ public sealed class GitHubDiffService(IGitHubClient gitHubClient, ILogger<GitHub
 
         try
         {
-            // Octokit's IPullRequestsClient.Get exposes no CancellationToken overload, so this
-            // metadata call cannot be cancelled once in flight.
-            var pullRequest = await _gitHubClient.Repository.PullRequest.Get(owner, repo, pullNumber);
-            if (string.IsNullOrWhiteSpace(pullRequest.DiffUrl))
-            {
-                _logger.LogWarning("Pull request {Owner}/{Repo}#{PullNumber} returned no diff URL.", owner, repo, pullNumber);
-                return Result.Fail(new ExternalServiceError("Unable to retrieve diff for the specified pull request."));
-            }
-
-            var response = await _gitHubClient.Connection.Get<string>(new Uri(pullRequest.DiffUrl), new Dictionary<string, string>(), "application/vnd.github.v3.diff", cancellationToken);
+            // Fetch the diff directly from the pull request endpoint using the diff media type.
+            // This is a single cancellable call (the CancellationToken is honoured), replacing the
+            // earlier metadata + download pair where the metadata call (PullRequest.Get) exposed no
+            // CancellationToken overload. GitHub returns the raw diff in the response body.
+            var endpoint = new Uri($"repos/{owner}/{repo}/pulls/{pullNumber}", UriKind.Relative);
+            var response = await _gitHubClient.Connection.Get<string>(
+                endpoint, new Dictionary<string, string>(), "application/vnd.github.v3.diff", cancellationToken);
             return Result.Ok(response.Body ?? string.Empty);
         }
         catch (NotFoundException)
         {
             _logger.LogWarning("Pull request {Owner}/{Repo}#{PullNumber} was not found.", owner, repo, pullNumber);
             return Result.Fail(new NotFoundError("The specified repository or pull request was not found."));
+        }
+        catch (RateLimitExceededException ex)
+        {
+            _logger.LogError(ex, "GitHub rate limit exceeded for {Owner}/{Repo}#{PullNumber}; resets at {Reset}.", owner, repo, pullNumber, ex.Reset);
+            return Result.Fail(new ExternalServiceError("GitHub rate limit exceeded. Please retry later."));
+        }
+        catch (SecondaryRateLimitExceededException ex)
+        {
+            _logger.LogError(ex, "GitHub secondary rate limit hit for {Owner}/{Repo}#{PullNumber}.", owner, repo, pullNumber);
+            return Result.Fail(new ExternalServiceError("GitHub secondary rate limit exceeded. Please retry later."));
         }
         catch (ApiException ex)
         {
@@ -63,6 +70,19 @@ public sealed class GitHubDiffService(IGitHubClient gitHubClient, ILogger<GitHub
         {
             _logger.LogError(ex, "Network failure while contacting GitHub for {Owner}/{Repo}#{PullNumber}.", owner, repo, pullNumber);
             return Result.Fail(new ExternalServiceError($"Network failure while contacting GitHub: {ex.Message}"));
+        }
+        catch (OperationCanceledException)
+        {
+            // Honour cancellation semantics (→ 499); never mask it as an external-service failure.
+            throw;
+        }
+        catch (Exception ex)
+        {
+            // Catch-all for unexpected failures, notably the resilience pipeline's open circuit
+            // breaker (Polly's BrokenCircuitException), which would otherwise surface as HTTP 500.
+            // Map it to an external-service failure (→ 502) consistent with the Claude path.
+            _logger.LogError(ex, "Unexpected failure retrieving diff for {Owner}/{Repo}#{PullNumber}.", owner, repo, pullNumber);
+            return Result.Fail(new ExternalServiceError($"Unexpected failure contacting GitHub: {ex.Message}"));
         }
     }
 }

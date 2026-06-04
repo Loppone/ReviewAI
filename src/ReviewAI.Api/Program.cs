@@ -2,6 +2,7 @@ using Anthropic.SDK;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.Extensions.Options;
 using Octokit;
+using Octokit.Internal;
 using ReviewAI.Api.Authentication;
 using ReviewAI.Api.Configuration;
 using ReviewAI.Api.Middleware;
@@ -30,6 +31,8 @@ builder.Services.AddOptions<ResilienceOptions>()
     .Bind(builder.Configuration.GetSection(ResilienceOptions.SectionName))
     .ValidateDataAnnotations()
     .ValidateOnStart();
+
+builder.Services.AddSingleton<IValidateOptions<ResilienceOptions>, ResilienceOptionsValidator>();
 
 builder.Services.AddOptions<ApiKeyAuthOptions>()
     .Bind(builder.Configuration.GetSection(ApiKeyAuthOptions.SectionName))
@@ -60,18 +63,25 @@ builder.Services.AddAuthorization();
 var resilienceOptions = builder.Configuration
     .GetSection(ResilienceOptions.SectionName)
     .Get<ResilienceOptions>() ?? new ResilienceOptions();
-builder.Services.AddAnthropicResilientHttpClient(resilienceOptions);
+builder.Services.AddAnthropicResilientHttpClient(resilienceOptions.Anthropic);
+builder.Services.AddGitHubResilientHttpClient(resilienceOptions.GitHub);
 
-builder.Services.AddSingleton<IGitHubClient>(_ =>
+builder.Services.AddSingleton<IGitHubClient>(sp =>
 {
     var token = Environment.GetEnvironmentVariable("GITHUB_TOKEN") ?? string.Empty;
-    var client = new GitHubClient(new ProductHeaderValue("ReviewAI"));
+
+    // Route Octokit through the named "GitHub" client's resilience handler chain so the
+    // pipeline (retry/timeout/circuit breaker) lives in the composition root, not in the service.
+    var handlerFactory = sp.GetRequiredService<IHttpMessageHandlerFactory>();
+    var httpClientAdapter = new HttpClientAdapter(
+        () => handlerFactory.CreateHandler(ResilientHttpClientExtensions.GitHubClientName));
+    var connection = new Connection(new ProductHeaderValue("ReviewAI"), httpClientAdapter);
     if (!string.IsNullOrWhiteSpace(token))
     {
-        client.Credentials = new Credentials(token);
+        connection.Credentials = new Credentials(token);
     }
 
-    return client;
+    return new GitHubClient(connection);
 });
 
 builder.Services.AddSingleton<IGitHubDiffService, GitHubDiffService>();
@@ -82,7 +92,7 @@ builder.Services.AddSingleton(sp =>
     var apiKey = Environment.GetEnvironmentVariable("ANTHROPIC_API_KEY") ?? string.Empty;
     var authentication = new APIAuthentication(apiKey);
     var httpClient = sp.GetRequiredService<IHttpClientFactory>()
-        .CreateClient(AnthropicHttpClientExtensions.AnthropicClientName);
+        .CreateClient(ResilientHttpClientExtensions.AnthropicClientName);
     return new AnthropicClient(authentication, httpClient, null);
 });
 
