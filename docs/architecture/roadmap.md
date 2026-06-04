@@ -167,15 +167,17 @@ Definiti in `ReviewAI.Core/Common/Errors/`:
   - **Allowed Models Validation (Slice D)**: whitelist `AllowedModels` + `KnownAnthropicModels`;
     `Model` deve appartenere alla whitelist e ogni voce dev'essere un modello supportato —
     regole cross-property in `AnthropicOptionsValidator`, fail-fast all'avvio.
-- ✅ **Test esistenti**: **101 test verdi** (handler, `GitHubDiffService`, `ClaudeReviewService`,
+- ✅ **Test esistenti**: **102 test verdi** (handler, `GitHubDiffService`, `ClaudeReviewService`,
   `AnthropicOptions`, e i test P3: auth handler + validator, rate limit options + partition key,
-  resilience options + validator + pipeline, allowed models; integration test HTTP).
+  resilience options + validator + pipeline, allowed models; integration test HTTP e health check).
 - ✅ **Continuous Integration (P4 Slice A)**: workflow GitHub Actions su pull request e push verso
   `master`; restore, build Release e test Release automatici della solution; SDK .NET fissato tramite
   `global.json` con roll-forward limitato alle patch della feature band.
 - ✅ **Integration Tests (P4-B Slice 1–2)**: test infrastructure con `WebApplicationFactory`,
   pipeline HTTP reale fino all'handler e dipendenze esterne sostituite; completata la matrice
   `Result` → HTTP (`200`, `400`, `404`, `502`, fallback `500`) con verifica dello short-circuit.
+- ✅ **Health Checks (P4-C)**: endpoint pubblico `GET /health` basato sugli health check nativi
+  ASP.NET Core; verifica la liveness dell'host senza chiamare GitHub o Anthropic.
 - ✅ **Seam testabili**: `IGitHubClient` (Octokit) per il mocking del path GitHub.
 - ✅ **Documentazione API** via Scalar (solo Development).
 
@@ -186,8 +188,8 @@ Definiti in `ReviewAI.Core/Common/Errors/`:
 
 ### Non ancora implementato
 
-- ❌ Tracing distribuito e metrics (OpenTelemetry) — il **logging strutturato** è coperto da P2; tracing/metrics restano fuori scope.
-- ❌ Health checks, monitoring.
+- ❌ Monitoring avanzato, tracing distribuito e metrics (OpenTelemetry) — fuori scope MVP;
+  il **logging strutturato** è coperto da P2.
 - ❌ Limiti/troncamento dimensione diff per PR molto grandi.
 
 ---
@@ -204,7 +206,7 @@ Problemi già identificati e tracciati (riferiti ai report di analisi precedenti
 
 Ancora aperti:
 
-- **Nessun health check**.
+- Nessun debito tecnico bloccante per l'MVP.
 
 Note di dettaglio aggiuntive (basse priorità):
 
@@ -221,8 +223,8 @@ Note di dettaglio aggiuntive (basse priorità):
 
 > **P1 — Affidabilità Claude, P2 — Osservabilità e P3 — Sicurezza e affidabilità: ✅ completati**
 > (vedi sezione "Completato").
-> **In corso: P4 — Production Readiness.** Continuous Integration (Slice A) e Integration Tests
-> HTTP (P4-B Slice 1–2) completati.
+> **P4 — Production Readiness MVP: ✅ completata.** Continuous Integration (Slice A), Integration
+> Tests HTTP (P4-B Slice 1–2) e Health Checks (P4-C) completati. Monitoring avanzato fuori scope MVP.
 
 ### P2 — Osservabilità — ✅ COMPLETATO
 
@@ -244,10 +246,10 @@ Note di dettaglio aggiuntive (basse priorità):
 
 ### P4 — Production Readiness
 
-- Health checks.
+- ✅ Health checks.
 - ✅ Continuous Integration (build + test automatici).
 - ✅ Test di integrazione (mapping `Result` → HTTP end-to-end via `WebApplicationFactory`).
-- Monitoring.
+- Monitoring avanzato, tracing e metrics — fuori scope MVP.
 
 ### P5 — Evoluzione architetturale
 
@@ -266,8 +268,8 @@ Note di dettaglio aggiuntive (basse priorità):
   è in essere (logging strutturato + global exception handler) e la sicurezza/affidabilità è coperta
   (API key auth, rate limiting per-key, resilienza per-client con circuit breaker su Claude e GitHub,
   whitelist model ID).
-- **Obiettivo successivo: Production-ready.** Continuous Integration e test di integrazione HTTP
-  sono coperti; restano health checks e monitoring (tracing/metrics).
+- **Obiettivo successivo:** validazione finale end-to-end contro GitHub e Anthropic reali.
+  Monitoring avanzato, tracing e metrics sono fuori scope MVP.
 
 ---
 
@@ -285,7 +287,7 @@ Sezione di onboarding rapido per un nuovo sviluppatore (o per Claude Code in una
   API key auth (constant-time, env var `REVIEWAI_API_KEYS`), rate limiting per-API-key (429 + RFC 7807),
   resilienza per-client con retry/timeout/circuit breaker su Claude **e** GitHub/Octokit (named client
   via `IHttpClientFactory`, `HttpClientAdapter`), whitelist model ID (`AllowedModels`).
-- Build pulita (0 warning/0 errori) e **101 test verdi**.
+- Build pulita (0 warning/0 errori) e **102 test verdi**.
 - L'integrazione Claude **non è ancora stata provata contro l'API reale** (servono `ANTHROPIC_API_KEY` e `GITHUB_TOKEN` veri); la correttezza è coperta dai test automatizzati.
 
 ### Cosa è stato deciso (standard non negoziabili)
@@ -298,9 +300,8 @@ Sezione di onboarding rapido per un nuovo sviluppatore (o per Claude Code in una
 
 ### Cosa fare dopo
 
-1. **P4 — Production Readiness**: health checks e monitoring/tracing-metrics.
-2. Validare l'integrazione Claude **end-to-end** contro l'API reale (`ANTHROPIC_API_KEY` + `GITHUB_TOKEN`).
-3. Infine **P5** (evoluzione architetturale e nuove feature).
+1. Validare l'integrazione Claude **end-to-end** contro l'API reale (`ANTHROPIC_API_KEY` + `GITHUB_TOKEN`).
+2. Dopo la validazione reale, dichiarare ReviewAI **MVP Completed**.
 
 ### Verifica rapida dell'ambiente
 
