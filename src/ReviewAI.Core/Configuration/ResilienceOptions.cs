@@ -3,44 +3,24 @@ using System.ComponentModel.DataAnnotations;
 namespace ReviewAI.Core.Configuration;
 
 /// <summary>
-/// Strongly-typed configuration for the outbound HTTP resilience pipeline applied to
-/// external clients. Bound from the "Resilience" configuration section and validated at startup.
+/// Strongly-typed configuration for the outbound HTTP resilience pipelines applied to the
+/// external clients. Bound from the "Resilience" configuration section and validated at startup
+/// by <see cref="ResilienceOptionsValidator"/>. Each external client carries its own profile so
+/// latency/cost characteristics can be tuned independently.
 /// </summary>
-public sealed class ResilienceOptions : IValidatableObject
+public sealed class ResilienceOptions
 {
     public const string SectionName = "Resilience";
 
     /// <summary>
-    /// Maximum number of retry attempts for transient failures (HTTP 5xx, 408, 429, network errors).
+    /// Resilience profile for the Anthropic (Claude) HTTP client.
     /// </summary>
-    [Range(0, 10, ErrorMessage = "Resilience:MaxRetries must be between 0 and 10.")]
-    public int MaxRetries { get; set; }
+    [Required]
+    public ClientResilienceOptions Anthropic { get; set; } = new();
 
     /// <summary>
-    /// Base delay for the exponential backoff between retries, in seconds.
+    /// Resilience profile for the GitHub (Octokit) HTTP client.
     /// </summary>
-    [Range(0, 60, ErrorMessage = "Resilience:RetryBaseDelaySeconds must be between 0 and 60.")]
-    public int RetryBaseDelaySeconds { get; set; }
-
-    /// <summary>
-    /// Timeout for a single attempt, in seconds.
-    /// </summary>
-    [Range(1, 600, ErrorMessage = "Resilience:AttemptTimeoutSeconds must be between 1 and 600.")]
-    public int AttemptTimeoutSeconds { get; set; }
-
-    /// <summary>
-    /// Timeout for the whole request including all retries, in seconds.
-    /// </summary>
-    [Range(1, 1200, ErrorMessage = "Resilience:TotalTimeoutSeconds must be between 1 and 1200.")]
-    public int TotalTimeoutSeconds { get; set; }
-
-    public IEnumerable<ValidationResult> Validate(ValidationContext validationContext)
-    {
-        if (TotalTimeoutSeconds < AttemptTimeoutSeconds)
-        {
-            yield return new ValidationResult(
-                "Resilience:TotalTimeoutSeconds must be greater than or equal to Resilience:AttemptTimeoutSeconds.",
-                [nameof(TotalTimeoutSeconds)]);
-        }
-    }
+    [Required]
+    public ClientResilienceOptions GitHub { get; set; } = new();
 }
