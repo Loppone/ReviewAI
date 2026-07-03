@@ -1,0 +1,18 @@
+name: Mergiato Pull After Merge
+
+on:
+  pull_request:
+    types: [closed]
+
+jobs:
+  mergiato-pull:
+    if: github.event.pull_request.merged == true
+    runs-on: [self-hosted, Windows, mergiato-pull]
+
+    steps:
+      - name: Run local Mergiato Pull
+        shell: powershell
+        env:
+          MERGIATO_PULL_SEARCH_ROOTS: C:\Sviluppo
+        run: |
+          & "C:\Users\maxbe\.agents\skills\mergiato-pull\scripts\Invoke-MergiatoPullFromGitHubEvent.ps1"
