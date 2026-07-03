@@ -11,7 +11,7 @@ jobs:
 
     steps:
       - name: Run local Mergiato Pull
-        shell: powershell
+        shell: powershell -NoProfile -ExecutionPolicy Bypass -File {0}
         env:
           MERGIATO_PULL_SEARCH_ROOTS: C:\Sviluppo
         run: |
